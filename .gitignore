@@ -1,0 +1,3 @@
+*.zip
+mtg_data/
+__pycache__/
