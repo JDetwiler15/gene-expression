@@ -207,9 +207,9 @@ def VariableSubset(data):
 	return data
 
 
-def SVDWrapper(data):
+def SVDWrapper(data, dim=50):
 	data = sparse.csr_matrix(data.T)
-	svd = TruncatedSVD(n_components=50, n_iter=7, random_state=42)
+	svd = TruncatedSVD(n_components=dim, n_iter=7, random_state=42)
 	svd.fit(data)
 	return svd.transform(data)
 
@@ -218,14 +218,13 @@ def TSNEWrapper(data):
 
 def Main():
 	
-	#data = BuildNumpyArray(True)  # load array
-	t0 = time.time()
-	data = np.load('matrixPickle.npy')
+	data = BuildNumpyArray(True)  # load array
+	#data = np.load('matrixPickle.npy') # load saved data
 	data = VariableSubset(data) # make subeset
 	data = PreprocessData(data)
 
 	print("Starting SVD at: ", time.time())
-	data = SVDWrapper(data) # note this returns data.T as a sparse TrucatedSVD
+	data = SVDWrapper(data, dim=20) # note this returns data.T as a sparse TrucatedSVD
 	print("SVD complete at: " , time.time())
 	print("result shape is ", data.shape)
 	print("Starting TSNE ... ")
@@ -235,9 +234,6 @@ def Main():
 	print(Y.shape)
 	print("Ploting data")
 	DrawScatterPlot(Y.T, "TSNETestPlot", labelX='TSNE X', labelY='TSNE Y')
-	tf = time.time()-t0
-	print("Process took" +str( tf) + "secs" )
-
 
 	# tsne it
 	# pheno cluster
