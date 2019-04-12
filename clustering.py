@@ -19,27 +19,29 @@ from sklearn.decomposition import TruncatedSVD
 from scipy import sparse
 from sklearn.manifold import TSNE
 
+
 """
     input (data) - dxn matrix of features x examples where this is a numpy array
     output - new_data, variances, eigenvectors   note all values are real
 """
 def PCA(data, FullPCA=False):
-    
+
     if not FullPCA:
         data -= data.mean(axis=1, keepdims=True)
-        
+
         #u, s, vh = np.linalg.svd(data.T)
-        s = np.linalg.svd(data, compute_uv=False)   
+        s = np.linalg.svd(data, compute_uv=False)
 
         return None, np.real(s**2), None
-    else:   
+    else:
         u, s, vh = np.linalg.svd(data.T)
         eigenvectors = vh.T
         variances = s ** 2
         new_data = eigenvectors.T.dot(data)
-        
+
         return np.real(new_data), np.real(variances), np.real(eigenvectors)
-    
+
+
 
 def BuildNumpyArray(save=False):
     
@@ -60,26 +62,6 @@ def BuildNumpyArray(save=False):
     return data
 
 
-def BuildNumpyArrayReducedDim(save=False):
-    data = np.zeros((48276, 15928),dtype=np.float64)
-    with open('human_MTG_2018-06-14_exon-matrix.csv') as csv_file:
-        csv_reader = csv.reader(csv_file,delimiter=',', quoting=csv.QUOTE_NONE)
-        matCount = 0
-        for i,row in enumerate(csv_reader): 
-            if i > 0:
-                geneData = np.array(row[1:], dtype=np.dtype(np.float64))
-                x = np.sum(geneData)
-                y = np.count_nonzero(geneData)
-                if not(x == 0 or y >= geneData.shape[0]-3): 
-                    data[matCount] = geneData
-                    matCount += 1
-        
-    if save:
-        print("Saving matrix")
-        np.save("matrixPickle", data)
-
-    print("Data read")
-    return data
 
 
 def get_genes_to_delete():
@@ -141,40 +123,6 @@ def BuildFilteredNumpyArray(save=False):
 
     print("Data read but not reduced here")
     return data
-
-
-def QualityGeneExpressionQualityControlRows():
-    badRows = []
-
-    with open('human_MTG_2018-06-14_exon-matrix.csv') as csv_file:
-        csv_reader = csv.reader(csv_file,delimiter=',', quoting=csv.QUOTE_NONE)
-        for i,row in enumerate(csv_reader):
-            if i > 0:
-                geneData = np.array(row[1:], dtype=np.dtype(np.int16))
-                x = np.sum(geneData)
-                y = np.count_nonzero(geneData)
-                if x == 0 or y >= geneData.shape[0]-3: 
-                    badRows.append(i)
-
-    print(str(len(badRows)) + " this many bad rows")
-    return badRows 
-
-def GenerateQualityControlIdLists():
-
-    sampleId = []
-    sampleColumnIndex = []
-
-    with open('human_MTG_2018-06-14_samples-columns.csv') as csv_file:
-        csv_reader = csv.reader(csv_file,delimiter=',')
-        line_count = 0
-        for row in csv_reader:
-            if line_count > 0:
-                if row[19] >= 500000 and row[25] > 50 and row[28] > 40:
-                    sampleId.append(row[1])
-                    sampleColumnIndex.append(line_count)
-            line_count += 1
-
-    return sampleId,sampleColumnIndex
 
 
 def DisplayPCAOnExonMatrix(data):
@@ -266,23 +214,6 @@ def TSNEPipeline(data):
     print(Y.shape)
     return Y.T
 
-"""
-def SubsetBasedOnClass(data):
-
-    keep_cols_gluta = []
-    keep_cols_ = []
-    with open('human_MTG_2018-06-14_samples-columns.csv') as csv_file:
-        csv_reader = csv.reader(csv_file,delimiter=',')
-        line_count = 0
-        for row in csv_reader:
-            if line_count > 0:
-                clusterClass = 
-                    sampleId.append(row[1])
-                    sampleColumnIndex.append(line_count)
-            line_count += 1
-
-    return sampleId,sampleColumnIndex
-"""
 
 def SubsetsBasedOnType(data):
 
@@ -351,6 +282,29 @@ def merge_arrays_inorder(idx, poll_array):
 
     return orderedIdx, orderedPoll
 
+def AgglogClusterSubsets(data, subsets_indices):
+
+    print("Clustering Exc ")
+    cluster1 = agg(n_clusters=24).fit(data[subsets_indices[0]])
+    print("Clustering Inb ")
+    cluster2 = agg(n_clusters=45).fit(data[subsets_indices[1]])
+    print("Clustering Non-Neural ")
+    cluster3 = agg(n_clusters=6).fit(data[subsets_indices[2]])
+
+    exc_colours = cluster1.labels_
+    inb_colours = cluster2.labels_
+    non_neural_colours = cluster3.labels_
+
+    print(np.max(exc_colours))
+    print(np.max(inb_colours))
+    print(np.max(non_neural_colours))
+
+    # builds a colour sequences that increases in number
+    inb_colours += (np.max(exc_colours) + 1)
+    non_neural_colours += (np.max(inb_colours) + 1)
+    print(np.max(non_neural_colours))
+    return (exc_colours, inb_colours, non_neural_colours)
+
 def ColourPlot(data, name, subsets_indices, colours):
     
     print("Building Colour Sequence")   
@@ -364,23 +318,44 @@ def ColourPlot(data, name, subsets_indices, colours):
     print("Ploting Data")   
     DrawScatterPlot(data, name, colour_seq=colour_seq)
     
+def ColourPlotAdv(data, name, subsets_indices, colours):
+
+    idxT, colourT = merge_arrays_inorder((subsets_indices[0], subsets_indices[1]), (colours[0], colours[1]))
+    inorder, colour_seq = merge_arrays_inorder((idxT, subsets_indices[2]), (colourT, colours[2]))
+    colour_seq = colour_seq[:-1] # chop the last one off
+
+    fig, ax = plt.subplots(1,1, figsize=(6,6))
+
+    cmap = plt.cm.gist_ncar
+    cmaplist = [cmap(i) for i in range(cmap.N)]
+    cmaplist[0] = (.5, .5, .5, 1.0)
+
+    cmap = mpl.colors.LinearSegmentedColormap.from_list('Custom cmap', cmaplist, cmap.N)
+    bounds = np.linspace(0,1,75)
+    norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
+    scat = ax.scatter(data[0,:], data[1,:], c=colour_seq,s=1, cmap=cmap, norm=norm)
+    ax.set_title("Better colors?")
+    name = "./" + name.replace(" ", "") + str(time.time()) + ".png"
+    plt.savefig(name)
 
 def Main():
-    
+
     #data = BuildNumpyArray(True)  # load array
     data = np.load('matrixPickle.npy') # load saved data
     data = VariableSubset(data) # make subeset
-    
-    print("Spliting Based on type") 
+
+    print("Spliting Based on type")
     subsets_indices = SubsetsBasedOnType(data)
-    
+
     print("PhenoClustering")
+    #colours = AgglogClusterSubsets(data, subsets_indices)
     colours = PhenoClusterSubsets(data, subsets_indices)
 
     print("Start TSNE")
     projection = TSNEPipeline(data)
-    
-    ColourPlot(projection,"Colour Me crazy", subsets_indices, colours)
+
+    ColourPlotAdv(projection,"Agglo clustering on TSNE projection", subsets_indices, colours)
+
 
 if __name__ == "__main__":
     Main()
