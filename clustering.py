@@ -13,6 +13,7 @@ mpl.use('Agg')
 import matplotlib.pyplot as plt
 import time
 
+import phenograph
 from sklearn.decomposition import TruncatedSVD
 from scipy import sparse
 from sklearn.manifold import TSNE
@@ -155,39 +156,14 @@ def Testsetup():
 	plt.ylabel('Random')
 	plt.savefig('./Temp.png')
 
-
-def PreprocessData(data):
-	
-	new_data = np.log((data / 1000000) + 1)  # log_2
-	# new_data -= new_data.mean(axis=1, keepdims=True)  #  centers the data
-
-	return new_data
-
-def DrawScatterPlot(data, name, labelX='X', labelY='Y'):
+def DrawScatterPlot(data, name, labelX='X', labelY='Y', colour_seq=None):
 	plt.figure()
-	plt.scatter(data[0,:], data[1,:])
+	plt.scatter(data[0,:], data[1,:], c=colour_seq)
 	plt.title(name)
 	plt.xlabel(labelX)
 	plt.ylabel(labelY)
 	name = "./" + name.replace(" ", "") + str(time.time()) + ".png"
 	plt.savefig(name)
-
-
-
-""" DEPRICATED 
-def TsneSubset(data, d=1000):
-	sample = data[0:d,0:d]
-	sample = sample[~np.all(sample == 0, axis=1)]  # remove rows
-	print("Starting TSNE on matrix with shape = " + str(sample.shape))
-	Y = tsne.tsne(sample, 2, 20, 20.0)
-	DrawScatterPlot(Y, "TSNE Scatter Plot D=20")
-
-def TsneWrapper(sample):
-	smaple = sample[~np.all(sample == 0, axis=1)]
-	print("Starting TSNE on matrix with shape = " + str(sample.shape))
-	Y = tsne.tsne(sample, 2, 20, 20.0)
-	DrawScatterPlot(Y, "TSNE Scatter Plot D=20@" + str(time.time()))
-"""	
 
 def VariableSubset(data):
 	# cut cells who have less than 1000 genes
@@ -202,7 +178,6 @@ def VariableSubset(data):
 	data *= 1e6  # convert percents to cpm
 	data += 1   # add 1 for log transform
 	data = np.log(data)  # log transform
-	print(data)
 	print("The variable subset shape is :", data.shape)
 	return data
 
@@ -216,12 +191,7 @@ def SVDWrapper(data, dim=50):
 def TSNEWrapper(data):
 	return TSNE(n_components=2).fit_transform(data)
 
-def Main():
-	
-	data = BuildNumpyArray(True)  # load array
-	#data = np.load('matrixPickle.npy') # load saved data
-	data = VariableSubset(data) # make subeset
-	data = PreprocessData(data)
+def TSNEPipeline(data):
 
 	print("Starting SVD at: ", time.time())
 	data = SVDWrapper(data, dim=20) # note this returns data.T as a sparse TrucatedSVD
@@ -230,12 +200,123 @@ def Main():
 	print("Starting TSNE ... ")
 	Y = TSNEWrapper(data)
 	print("TSNE finished at ", time.time())
-	print(Y)
 	print(Y.shape)
-	print("Ploting data")
-	DrawScatterPlot(Y.T, "TSNETestPlot", labelX='TSNE X', labelY='TSNE Y')
+	return Y.T
 
-	# tsne it
-	# pheno cluster
+"""
+def SubsetBasedOnClass(data):
+
+	keep_cols_gluta = []
+	keep_cols_ = []
+	with open('human_MTG_2018-06-14_samples-columns.csv') as csv_file:
+		csv_reader = csv.reader(csv_file,delimiter=',')
+		line_count = 0
+		for row in csv_reader:
+			if line_count > 0:
+				clusterClass = 
+					sampleId.append(row[1])
+					sampleColumnIndex.append(line_count)
+			line_count += 1
+
+	return sampleId,sampleColumnIndex
+"""
+
+def SubsetsBasedOnType(data):
+
+	keep_cols_exc = []
+	keep_cols_inb = []
+	keep_cols_non_nerual = []
+		
+	with open('human_MTG_2018-06-14_samples-columns.csv') as csv_file:
+		csv_reader = csv.reader(csv_file,delimiter=',')
+		line_count = 0
+		for row in csv_reader:
+			if "Inh" in row[-1]:
+				keep_cols_inb.append(line_count)
+			elif "Exc" in row[-1]:
+				keep_cols_exc.append(line_count)
+			else:
+				keep_cols_non_nerual.append(line_count)
+			line_count += 1
+	
+	return (keep_cols_exc, keep_cols_inb, keep_cols_non_nerual)
+
+def PhenoClusterSubsets(data, subsets_indices):
+
+	print("Clustering 1")
+	exc_colours, graph, Q = phenograph.cluster(data[subsets_indices[0]])
+	print("Clustering 2")
+	inb_colours, graph, Q = phenograph.cluster(data[subsets_indices[1]])
+	print("Clustering 3")
+	non_neural_colours, graph, Q = phenograph.cluster(data[subsets_indices[2]])
+
+	print(np.max(exc_colours))
+	print(np.max(inb_colours))
+	print(np.max(non_neural_colours))
+
+	exc_colours += 1
+	
+	inb_colours += (np.max(exc_colours) + 1)
+	non_neural_colours += (np.max(inb_colours) + 1) 
+	return (exc_colours, inb_colours, non_neural_colours)
+
+def merge_arrays_inorder(idx, poll_array):
+
+	idx1 = 0
+	idx2 = 0
+
+	orderedIdx = []
+	orderedPoll = []
+
+	while idx1 + idx2 < len(idx[0]) + len(idx[1]):
+		if idx1 >= len(idx[0]):
+			orderedIdx.append(idx2)
+			orderedPoll.append(poll_array[1][idx2])
+			idx2 += 1
+		elif idx2 >= len(idx[1]):
+			orderedIdx.append(idx1)
+			orderedPoll.append(poll_array[0][idx1])
+			idx1 += 1
+		elif idx[0][idx1] < idx[1][idx2]:
+			orderedIdx.append(idx1)
+			orderedPoll.append(poll_array[0][idx1])
+			idx1 += 1
+		else:
+			orderedIdx.append(idx2)
+			orderedPoll.append(poll_array[1][idx2])
+			idx2 += 1
+
+	return orderedIdx, orderedPoll
+
+def ColourPlot(data, name, subsets_indices, colours):
+	
+	print("Building Colour Sequence")	
+	# 3 way merge sort
+	idxT, colourT = merge_arrays_inorder((subsets_indices[0], subsets_indices[1]), (colours[0], colours[1]))
+	inorder, colour_seq = merge_arrays_inorder((idxT, subsets_indices[2]), (colourT, colours[2]))
+	colour_seq = colour_seq[:-1] # chop the last one off
+		
+
+
+	print("Ploting Data")	
+	DrawScatterPlot(data, name, colour_seq=colour_seq)
+	
+
+def Main():
+	
+	#data = BuildNumpyArray(True)  # load array
+	data = np.load('matrixPickle.npy') # load saved data
+	data = VariableSubset(data) # make subeset
+	
+	print("Spliting Based on type")	
+	subsets_indices = SubsetsBasedOnType(data)
+	
+	print("PhenoClustering")
+	colours = PhenoClusterSubsets(data, subsets_indices)
+
+	print("Start TSNE")
+	projection = TSNEPipeline(data)
+	
+	ColourPlot(projection,"Colour Me crazy", subsets_indices, colours)
 
 Main()
