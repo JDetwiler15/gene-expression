@@ -20,28 +20,15 @@ from scipy import sparse
 from sklearn.manifold import TSNE
 
 
-"""
-    input (data) - dxn matrix of features x examples where this is a numpy array
-    output - new_data, variances, eigenvectors   note all values are real
-"""
-def PCA(data, FullPCA=False):
-
-    if not FullPCA:
-        data -= data.mean(axis=1, keepdims=True)
-
-        #u, s, vh = np.linalg.svd(data.T)
-        s = np.linalg.svd(data, compute_uv=False)
-
-        return None, np.real(s**2), None
-    else:
-        u, s, vh = np.linalg.svd(data.T)
-        eigenvectors = vh.T
-        variances = s ** 2
-        new_data = eigenvectors.T.dot(data)
-
-        return np.real(new_data), np.real(variances), np.real(eigenvectors)
 
 
+def PCAWrapper(data):
+    dataT ,variences = SVDWrapper(data, dim=2) # note this returns data.T as a sparse TrucatedSVD
+    Xaxis = "PC-1, Var=" + str(variences[0])
+    Yaxis = "PC-2, Var=" + str(variences[1])
+
+    DrawScatterPlot(dataT.T, "PCA of Gene data", labelX=Xaxis, labelY=Yaxis)
+    
 
 def BuildNumpyArray(save=False):
     
@@ -117,12 +104,13 @@ def BuildFilteredNumpyArray(save=False):
         #remove 0 rows
         data = data[~np.all(data == 0, axis=1)]
 
+
     if save:
         print("Saving matrix")
         np.save("matrixPickle", data)
 
     print("Data read but not reduced here")
-    return data
+    return data, columnIndicesToDelete
 
 
 def DisplayPCAOnExonMatrix(data):
@@ -169,12 +157,12 @@ def Testsetup():
 
 def DrawScatterPlot(data, name, labelX='X', labelY='Y', colour_seq=None):
     plt.figure()
-    plt.scatter(data[0,:], data[1,:], c=colour_seq)
+    plt.scatter(data[0,:], data[1,:], c=colour_seq, s=1)
     plt.title(name)
     plt.xlabel(labelX)
     plt.ylabel(labelY)
     name = "./" + name.replace(" ", "") + str(time.time()) + ".png"
-    plt.savefig(name)
+    plt.savefig(name, transparent=True)
 
 def VariableSubset(data):
     # cut cells who have less than 1000 genes
@@ -197,7 +185,7 @@ def SVDWrapper(data, dim=50):
     data = sparse.csr_matrix(data.T)
     svd = TruncatedSVD(n_components=dim, n_iter=7, random_state=42)
     svd.fit(data)
-    return svd.transform(data)
+    return svd.transform(data), svd.explained_variance_ratio_
 
 def TSNEWrapper(data):
     return TSNE(n_components=2).fit_transform(data)
@@ -205,7 +193,7 @@ def TSNEWrapper(data):
 def TSNEPipeline(data):
 
     print("Starting SVD at: ", time.time())
-    data = SVDWrapper(data, dim=20) # note this returns data.T as a sparse TrucatedSVD
+    data = SVDWrapper(data, dim=20)[0] # note this returns data.T as a sparse TrucatedSVD
     print("SVD complete at: " , time.time())
     print("result shape is ", data.shape)
     print("Starting TSNE ... ")
@@ -215,7 +203,7 @@ def TSNEPipeline(data):
     return Y.T
 
 
-def SubsetsBasedOnType(data):
+def SubsetsBasedOnType(data, ignoreIdx):
 
     keep_cols_exc = []
     keep_cols_inb = []
@@ -225,6 +213,9 @@ def SubsetsBasedOnType(data):
         csv_reader = csv.reader(csv_file,delimiter=',')
         line_count = 0
         for row in csv_reader:
+            if line_count in ignoreIdx:
+                line_count += 1
+                continue
             if "Inh" in row[-1]:
                 keep_cols_inb.append(line_count)
             elif "Exc" in row[-1]:
@@ -305,18 +296,16 @@ def AgglogClusterSubsets(data, subsets_indices):
     print(np.max(non_neural_colours))
     return (exc_colours, inb_colours, non_neural_colours)
 
-def ColourPlot(data, name, subsets_indices, colours):
+def ColourPlot(data, name, subsets_indices, colours, labelX1="", labelY1=""):
     
     print("Building Colour Sequence")   
     # 3 way merge sort
     idxT, colourT = merge_arrays_inorder((subsets_indices[0], subsets_indices[1]), (colours[0], colours[1]))
     inorder, colour_seq = merge_arrays_inorder((idxT, subsets_indices[2]), (colourT, colours[2]))
     colour_seq = colour_seq[:-1] # chop the last one off
-        
-
 
     print("Ploting Data")   
-    DrawScatterPlot(data, name, colour_seq=colour_seq)
+    DrawScatterPlot(data, name, labelX=labelX1, labelY=labelY1, colour_seq=colour_seq)
     
 def ColourPlotAdv(data, name, subsets_indices, colours):
 
@@ -336,25 +325,29 @@ def ColourPlotAdv(data, name, subsets_indices, colours):
     scat = ax.scatter(data[0,:], data[1,:], c=colour_seq,s=1, cmap=cmap, norm=norm)
     ax.set_title("Better colors?")
     name = "./" + name.replace(" ", "") + str(time.time()) + ".png"
-    plt.savefig(name)
+    plt.savefig(name, transparent=True)
 
 def Main():
 
     #data = BuildNumpyArray(True)  # load array
-    data = np.load('matrixPickle.npy') # load saved data
+    data, removedIdx = BuildFilteredNumpyArray()
+    #data = np.load('matrixPickle.npy') # load saved data   
+
     data = VariableSubset(data) # make subeset
 
     print("Spliting Based on type")
-    subsets_indices = SubsetsBasedOnType(data)
-
-    print("PhenoClustering")
+    subsets_indices = SubsetsBasedOnType(data, removedIdx)
+    
+    #print("PhenoClustering")
     #colours = AgglogClusterSubsets(data, subsets_indices)
     colours = PhenoClusterSubsets(data, subsets_indices)
 
+    #PCAWrapper(data)
+
     print("Start TSNE")
     projection = TSNEPipeline(data)
-
-    ColourPlotAdv(projection,"Agglo clustering on TSNE projection", subsets_indices, colours)
+    #DrawScatterPlot(projection,"Gene data mapping using T-SNE Projection", labelX="T-SNE X", labelY="T-SNE Y")
+    ColourPlot(projection,"Gene data TSNE projection coupled with Phenograph clustering", subsets_indices, colours, labelX1="TSNE Dim 1", labelY1="TSNE Dim 2")
 
 
 if __name__ == "__main__":
